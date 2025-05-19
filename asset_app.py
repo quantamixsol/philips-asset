@@ -30,14 +30,6 @@ st.image("Phillips-Logo.png", width=120)
 st.title("Philips Asset Template Generator")
 st.caption("© Koninklijke Philips N.V. All rights reserved.")
 
-if not openai.api_key:
-    st.error(
-        "🔒 Missing OPENAI_API_KEY. Please set it in your environment before running:\n"
-        "PowerShell: $Env:OPENAI_API_KEY='sk-...'\n"
-        "CMD: set OPENAI_API_KEY=sk-...\n"
-        "Then: streamlit run asset_app.py"
-    )
-    st.stop()
 
 # --- Helper: Extract text from PDF ---
 def extract_text_from_pdf(uploaded_file):
@@ -166,11 +158,11 @@ st.header("Export Completed Template")
 csv = filled.to_csv(index=False).encode()
 st.download_button("Download CSV", csv, file_name=f"{col_name}_asset_template.csv", key="dl_csv")
 
-# --- Footer Instructions ---
-st.markdown(
-    "---\n"
-    "**To run locally:**\n"
-    "1. PowerShell: `$Env:OPENAI_API_KEY='sk-...'`\n"
-    "2. CMD: `set OPENAI_API_KEY=sk-...`\n"
-    "3. `streamlit run asset_app.py`"
-)
+# # --- Footer Instructions ---
+# st.markdown(
+#     "---\n"
+#     "**To run locally:**\n"
+#     "1. PowerShell: `$Env:OPENAI_API_KEY='sk-...'`\n"
+#     "2. CMD: `set OPENAI_API_KEY=sk-...`\n"
+#     "3. `streamlit run asset_app.py`"
+# )
