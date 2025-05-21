@@ -163,13 +163,13 @@ if st.button("Generate AI Content", key="gen_ai"):
             is_key = parsed_content.get(field,"")
             if is_key:
                 filled.at[i, col_name] = parsed_content[field]
+        st.header("Filled Template Structure ")
+        st.dataframe(filled, use_container_width=True)
 
     except Exception as e:
         st.error(f"AI generation failed: {e}")
 
 # --- Export ---
-st.header("Filled Template Structure ")
-st.dataframe(filled, use_container_width=True)
 st.header("Export Completed Template")
 csv = filled.to_csv(index=False).encode()
 st.download_button("Download CSV", csv, file_name=f"{col_name}_asset_template.csv", key="dl_csv")
