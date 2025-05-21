@@ -136,12 +136,16 @@ for i, row in filled.iterrows():
     field = row[field_c]
     if content_type == "Functional Description":
         filled.at[i, col_name] = st.text_area(field, key=f"func_{i}", height=80)
-    elif content_type == "Pack Contents" and not acl_df.empty:
+    elif content_type == "Pack Contents":
         if 'Pack Contents' in acl_df.columns:
             filled.at[i, col_name] = ", ".join(acl_df['Pack Contents'].dropna().unique())
-    elif content_type == "Disclaimer" and not acl_df.empty:
+        else:
+            filled.at[i, col_name] = ""
+    elif content_type == "Disclaimer":
         if 'Disclaimer' in acl_df.columns:
             filled.at[i, col_name] = "\n".join(acl_df['Disclaimer'].dropna())
+        else:
+            filled.at[i, col_name] = ""
 
 # --- AI Generation ---
 st.header("AI-Generated Copy")
