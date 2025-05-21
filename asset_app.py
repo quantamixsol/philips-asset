@@ -143,10 +143,20 @@ if not all(k in col_map for k in ['field name','content type','char count']):
 field_c, type_c, char_c = col_map['field name'], col_map['content type'], col_map['char count']
 
 # --- CTN Input & Column Setup ---
-ctn = st.text_input("Enter new CTN number", help="E.g. 1234567890", key="ctn_input")
-col_name = ctn.strip() or "CTN"
-if col_name not in template_df.columns:
-    template_df[col_name] = ""
+st.header("CTN Setup")
+ctn_input = st.text_area(
+    "Enter CTN numbers (one per line)",
+    help="Provide one or more CTN numbers. Each will be used as a separate column",
+    key="ctn_input",
+)
+ctn_list = [c.strip() for c in ctn_input.splitlines() if c.strip()]
+if not ctn_list:
+    ctn_list = ["CTN"]
+
+for ctn in ctn_list:
+    if ctn not in template_df.columns:
+        template_df[ctn] = ""
+
 
 # --- Display Template ---
 st.header("Template Structure & Definitions")
@@ -155,110 +165,140 @@ st.dataframe(template_df, use_container_width=True)
 # --- Fill Fixed Fields ---
 st.header("Fill Functional Descriptions & ACL Content")
 filled = template_df.copy()
-for i, row in filled.iterrows():
-    content_type = row[type_c]
-    field = row[field_c]
-    if content_type == "Functional Description":
-        filled.at[i, col_name] = st.text_area(field, key=f"func_{i}", height=80)
-    elif content_type == "Pack Contents":
-        if 'Pack Contents' in acl_df.columns:
-            filled.at[i, col_name] = ", ".join(acl_df['Pack Contents'].dropna().unique())
-        else:
-            filled.at[i, col_name] = ""
-    elif content_type == "Disclaimer":
-        if 'Disclaimer' in acl_df.columns:
-            filled.at[i, col_name] = "\n".join(acl_df['Disclaimer'].dropna())
-        else:
-            filled.at[i, col_name] = ""
+user_inputs = {}
+for ctn in ctn_list:
+    st.subheader(f"Inputs for CTN {ctn}")
+    user_inputs[ctn] = {}
+    for i, row in filled.iterrows():
+        content_type = row[type_c]
+        field = row[field_c]
+        if content_type == "Functional Description" and field in AI_FIELDS:
+            inp = st.text_area(f"{ctn} - {field}", key=f"{ctn}_{field}", height=80)
+            user_inputs[ctn][field] = inp
+            filled.at[i, ctn] = inp
+        elif content_type == "Pack Contents":
+            if 'Pack Contents' in acl_df.columns:
+                filled.at[i, ctn] = ", ".join(acl_df['Pack Contents'].dropna().unique())
+            else:
+                filled.at[i, ctn] = ""
+        elif content_type == "Disclaimer":
+            if 'Disclaimer' in acl_df.columns:
+                filled.at[i, ctn] = "\n".join(acl_df['Disclaimer'].dropna())
+            else:
+                filled.at[i, ctn] = ""
 
 # --- AI Generation ---
 st.header("AI-Generated Copy")
 if st.button("Generate AI Content", key="gen_ai"):
-    system_prompt = (
-        f"You are a Philips copywriter. Brand guidelines: {branding_text[:500]}. "
-        f"Product details: {product_text[:500]}. CTN: {ctn}. "
-        "Generate copy for each field in the following template. Only reference the provided product information; "
-        "do not mention unrelated Philips products or categories. "
-        "Output MUST be a single valid JSON object whose keys exactly match the template’s “Field Name” values "
-        "and whose values are the generated strings. "
-        "Do not include any markdown or explanatory text—only the JSON. "
-        "Example format:\n"
-        "{\n"
-        '  "Wow": "…",\n'
-        '  "Subwow": "…",\n'
-        '  "Marketing Text": "…",\n'
-        '  "Feature 1 Name": "…",\n'
-        '  ...\n'
-        "}\n"
-    )
-    user_prompt = "Fields with limits:\n"
-    for i, row in filled.iterrows():
-        if row[type_c] in ["Headline", "Marketing Text", "Feature Name", "Feature Description", "Feature Glossary", "Pack Contents", "Disclaimer"]:
-            char_count = row.get(char_c, 300)
-            if isinstance(char_count, str) and char_count.strip().startswith("<"):
-                limit = char_count
-            else:
-                limit = f"<{char_count}>"
-            user_prompt += f"- {row[field_c]} ({limit}) chars\n"
     selected_model = (
         FINETUNED_MODEL if use_finetuned_model == "Fine-tuned Model" else "gpt-4o"
     )
-    try:
-        resp = OPENAI_CLIENT.chat.completions.create(
-            model=selected_model,
-            messages=[
-                {"role":"system","content":system_prompt},
-                {"role":"user","content":user_prompt},
-            ],
-            temperature=0.2,
-        )
-        # we want to fill this into the table
-        ai_output = resp.choices[0].message.content
-        st.text_area("AI Output", ai_output, height=300, key="ai_out")
-                
-        parsed_content = {}
+    variations = 3
+    progress = st.progress(0)
+    warnings = []
+    total = len(ctn_list) * variations
+    step = 0
+    for ctn in ctn_list:
+        for var in range(1, variations + 1):
+            step += 1
+            system_prompt = (
+                f"You are a Philips copywriter. Brand guidelines: {branding_text[:500]}. "
+                f"Product details: {product_text[:500]}. CTN: {ctn}. "
+                f"Functional Description 1: {user_inputs[ctn].get('Functional Description 1','')}. "
+                f"Functional Description 2: {user_inputs[ctn].get('Functional Description 2','')}. "
+                "Generate copy for each field in the following template. Only reference the provided product information; "
+                "do not mention unrelated Philips products or categories. "
+                "Output MUST be a single valid JSON object whose keys exactly match the template’s “Field Name” values "
+                "and whose values are the generated strings. "
+                "Do not include any markdown or explanatory text—only the JSON."
+            )
 
-        try:
-            parsed_content = json.loads(ai_output)
-        except json.JSONDecodeError:
-            # Fallback to regex parsing if not valid JSON
-            matches = re.findall(r"\*\*(.+?):\*\*\s*(.+?)(?=\n\*\*|\Z)", ai_output, re.DOTALL)
-            parsed_content = {k.strip(): v.strip() for k, v in matches}
+            user_prompt = "Fields with limits:\n"
+            for _, row in filled.iterrows():
+                if row[type_c] in [
+                    "Headline",
+                    "Marketing Text",
+                    "Feature Name",
+                    "Feature Description",
+                    "Feature Glossary",
+                    "Pack Contents",
+                    "Disclaimer",
+                ]:
+                    char_count = row.get(char_c, 300)
+                    if isinstance(char_count, str) and char_count.strip().startswith("<"):
+                        limit = char_count
+                    else:
+                        limit = f"<{char_count}>"
+                    user_prompt += f"- {row[field_c]} ({limit}) chars\n"
 
-        # --- Fill into Template with character limit checks ---
-        warnings = []
-        for i, row in filled.iterrows():
-            field = row[field_c].strip()
-            new_val = parsed_content.get(field, "")
-            if new_val:
-                limit = parse_char_limit(row.get(char_c))
-                if limit and len(new_val) > limit:
-                    warnings.append(f"{field} exceeds {limit} characters; truncated.")
-                    new_val = new_val[:limit]
-                filled.at[i, col_name] = new_val
+            try:
+                resp = OPENAI_CLIENT.chat.completions.create(
+                    model=selected_model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=0.2,
+                    response_format={"type": "json_object"},
+                )
+                ai_output = resp.choices[0].message.content
+                parsed_content = json.loads(ai_output)
+            except Exception as e:
+                st.error(f"AI generation failed for {ctn} variation {var}: {e}")
+                continue
 
-        if warnings:
-            for w in warnings:
-                st.warning(w)
+            col_name = f"{ctn}_V{var}"
+            if col_name not in filled.columns:
+                filled[col_name] = ""
 
-        st.subheader("Review & Edit AI Content")
-        for i, row in filled.iterrows():
-            field = row[field_c].strip()
-            if field in AI_FIELDS:
-                current = filled.at[i, col_name]
-                updated = st.text_area(field, value=current, key=f"edit_{i}")
-                filled.at[i, col_name] = updated
+            for i, row in filled.iterrows():
+                field = row[field_c].strip()
+                new_val = parsed_content.get(field, "")
+                if new_val:
+                    limit = parse_char_limit(row.get(char_c))
+                    if limit and len(new_val) > limit:
+                        warnings.append(
+                            f"{col_name} - {field} exceeds {limit} characters; truncated."
+                        )
+                        new_val = new_val[:limit]
+                    filled.at[i, col_name] = new_val
 
-        st.header("Filled Template Structure")
-        st.dataframe(filled, use_container_width=True)
+            progress.progress(step / total)
 
-    except Exception as e:
-        st.error(f"AI generation failed: {e}")
+    if warnings:
+        for w in warnings:
+            st.warning(w)
+
+    st.subheader("Review & Edit AI Content")
+    for ctn in ctn_list:
+        for var in range(1, variations + 1):
+            col_name = f"{ctn}_V{var}"
+            if col_name in filled.columns:
+                st.markdown(f"**{col_name}**")
+                for i, row in filled.iterrows():
+                    field = row[field_c].strip()
+                    if field in AI_FIELDS:
+                        current = filled.at[i, col_name]
+                        updated = st.text_area(
+                            f"{col_name} - {field}", value=current, key=f"edit_{col_name}_{i}"
+                        )
+                        filled.at[i, col_name] = updated
+
+    st.header("Filled Template Structure")
+    st.dataframe(filled, use_container_width=True)
 
 # --- Export ---
 st.header("Export Completed Template")
 csv = filled.to_csv(index=False).encode()
-st.download_button("Download CSV", csv, file_name=f"{col_name}_asset_template.csv", key="dl_csv")
+st.download_button("Download CSV", csv, file_name="asset_template.csv", key="dl_csv")
+
+xlsx_buf = io.BytesIO()
+with pd.ExcelWriter(xlsx_buf, engine="openpyxl") as writer:
+    filled.to_excel(writer, index=False)
+xlsx_buf.seek(0)
+st.download_button(
+    "Download Excel", xlsx_buf, file_name="asset_template.xlsx", key="dl_xlsx"
+)
 
 # # --- Footer Instructions ---
 # st.markdown(
