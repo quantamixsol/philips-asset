@@ -1,13 +1,14 @@
 import streamlit as st
 import pandas as pd
-import openai
 import io
 from PyPDF2 import PdfReader
 from openai import OpenAI
 from dotenv import load_dotenv
+import re, json
 load_dotenv()
 
 OPENAI_CLIENT = OpenAI()
+FINETUNED_MODEL = "ft:gpt-4o-mini-2024-07-18:quantamix-solutions:philipsfinetunedoptimised:AqQma6hA:ckpt-step-516"
 # --- Page Configuration & Branding CSS ---
 st.set_page_config(page_title="Philips Asset Template Generator", layout="wide")
 st.markdown(
@@ -38,6 +39,13 @@ def extract_text_from_pdf(uploaded_file):
 
 # --- Sidebar: Uploads & Settings ---
 st.sidebar.header("1. Upload Files & Settings")
+use_finetuned_model = st.sidebar.radio(
+    "Select Model Type",
+    ["GPT-4o (Standard)", "Fine-tuned Model"],
+    index=0,
+    help="Choose between using OpenAI's GPT-4o or a fine-tuned version."
+)
+
 uploaded_template = st.sidebar.file_uploader(
     "Upload Existing Asset Template (XLSX/XLSM)", type=["xlsx", "xlsm"],
     help="Import an existing asset template to prefill structure.", key="upl_temp"
@@ -50,9 +58,6 @@ product_pdf = st.sidebar.file_uploader(
 )
 acl_file = st.sidebar.file_uploader(
     "Upload Approved Claims List (CSV)", type=["csv"], help="ACL CSV.", key="acl_csv"
-)
-model_choice = st.sidebar.selectbox(
-    "Choose AI Model", ["openai/gpt-4o-mini", "google/gemini-pro"], key="model_choice"
 )
 
 # --- Load ACL & Guidelines ---
@@ -138,26 +143,47 @@ if st.button("Generate AI Content", key="gen_ai"):
     system_prompt = (
         f"You are a Philips copywriter. Brand guidelines: {branding_text[:500]}. "
         f"Product details: {product_text[:500]}. CTN: {ctn}. "
-        "Fill the following with Philips tone and exact approved claims:"
+        "Generate copy for each field in the following template. "
+        "Output MUST be a single valid JSON object whose keys exactly match the template’s “Field Name” values "
+        "and whose values are the generated strings. "
+        "Do not include any markdown or explanatory text—only the JSON. "
+        "Example format:\n"
+        "{\n"
+        '  "Wow": "…",\n'
+        '  "Subwow": "…",\n'
+        '  "Marketing Text": "…",\n'
+        '  "Feature 1 Name": "…",\n'
+        '  ...\n'
+        "}\n"
     )
     user_prompt = "Fields with limits:\n"
     for i, row in filled.iterrows():
         if row[type_c] in ["Headline","Marketing Text", "Feature Name" ,"Feature Description","Feature Glossary", "Pack Contents", "Disclaimer"]:
             char_count = row.get(char_c,300)
             user_prompt += f"- {row[field_c]} (<{char_count}) chars\n"
+    selected_model = (
+        FINETUNED_MODEL if use_finetuned_model == "Fine-tuned Model" else "gpt-4o"
+    )
     try:
         resp = OPENAI_CLIENT.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role":"system","content":system_prompt},{"role":"user","content":user_prompt}]
+            model=selected_model,
+            messages=[
+                {"role":"system","content":system_prompt},
+                {"role":"user","content":user_prompt}
+                ]
         )
         # we want to field this into table 
         ai_output = resp.choices[0].message.content
         st.text_area("AI Output", ai_output, height=300, key="ai_out")
-        
-        import re
-        matches = re.findall(r"\*\*(.+?):\*\*\s*(.+?)(?=\n\*\*|\Z)", ai_output, re.DOTALL)
-        parsed_content = {k.strip(): v.strip() for k, v in matches}
-        print(parsed_content)
+                
+        parsed_content = {}
+
+        try:
+            parsed_content = json.loads(ai_output)
+        except json.JSONDecodeError:
+            # Fallback to regex parsing if not valid JSON
+            matches = re.findall(r"\*\*(.+?):\*\*\s*(.+?)(?=\n\*\*|\Z)", ai_output, re.DOTALL)
+            parsed_content = {k.strip(): v.strip() for k, v in matches}
         # --- Fill into Template ---
         for i, row in filled.iterrows():
             field = row[field_c].strip()
