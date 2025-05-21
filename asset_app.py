@@ -184,7 +184,7 @@ if st.button("Generate AI Content", key="gen_ai"):
             ],
             temperature=0.2,
         )
-        # we want to field this into table 
+        # we want to fill this into the table
         ai_output = resp.choices[0].message.content
         st.text_area("AI Output", ai_output, height=300, key="ai_out")
                 
