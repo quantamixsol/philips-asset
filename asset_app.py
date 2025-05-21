@@ -133,9 +133,11 @@ for i, row in filled.iterrows():
     if content_type == "Functional Description":
         filled.at[i, col_name] = st.text_area(field, key=f"func_{i}", height=80)
     elif content_type == "Pack Contents" and not acl_df.empty:
-        filled.at[i, col_name] = ", ".join(acl_df.get('Pack Contents', []).dropna().unique())
+        if 'Pack Contents' in acl_df.columns:
+            filled.at[i, col_name] = ", ".join(acl_df['Pack Contents'].dropna().unique())
     elif content_type == "Disclaimer" and not acl_df.empty:
-        filled.at[i, col_name] = "\n".join(acl_df.get('Disclaimer', []).dropna())
+        if 'Disclaimer' in acl_df.columns:
+            filled.at[i, col_name] = "\n".join(acl_df['Disclaimer'].dropna())
 
 # --- AI Generation ---
 st.header("AI-Generated Copy")
@@ -158,9 +160,13 @@ if st.button("Generate AI Content", key="gen_ai"):
     )
     user_prompt = "Fields with limits:\n"
     for i, row in filled.iterrows():
-        if row[type_c] in ["Headline","Marketing Text", "Feature Name" ,"Feature Description","Feature Glossary", "Pack Contents", "Disclaimer"]:
-            char_count = row.get(char_c,300)
-            user_prompt += f"- {row[field_c]} (<{char_count}) chars\n"
+        if row[type_c] in ["Headline", "Marketing Text", "Feature Name", "Feature Description", "Feature Glossary", "Pack Contents", "Disclaimer"]:
+            char_count = row.get(char_c, 300)
+            if isinstance(char_count, str) and char_count.strip().startswith("<"):
+                limit = char_count
+            else:
+                limit = f"<{char_count}>"
+            user_prompt += f"- {row[field_c]} ({limit}) chars\n"
     selected_model = (
         FINETUNED_MODEL if use_finetuned_model == "Fine-tuned Model" else "gpt-4o"
     )
