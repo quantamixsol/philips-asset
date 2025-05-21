@@ -157,6 +157,7 @@ if st.button("Generate AI Content", key="gen_ai"):
         import re
         matches = re.findall(r"\*\*(.+?):\*\*\s*(.+?)(?=\n\*\*|\Z)", ai_output, re.DOTALL)
         parsed_content = {k.strip(): v.strip() for k, v in matches}
+        print(parsed_content)
         # --- Fill into Template ---
         for i, row in filled.iterrows():
             field = row[field_c].strip()
