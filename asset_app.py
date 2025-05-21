@@ -98,6 +98,13 @@ if acl_file:
 
 branding_text = extract_text_from_pdf(branding_pdf) if branding_pdf else ""
 product_text = extract_text_from_pdf(product_pdf) if product_pdf else ""
+claims_text = ""
+if not acl_df.empty:
+    claim_cols = [c for c in acl_df.columns if c not in ["Pack Contents", "Disclaimer"]]
+    if claim_cols:
+        claims_text = " ".join(
+            acl_df[claim_cols].fillna("").astype(str).agg(" ".join, axis=1).tolist()
+        )
 
 # --- Initialize or Load Template Structure ---
 if uploaded_template:
@@ -142,25 +149,26 @@ if not all(k in col_map for k in ['field name','content type','char count']):
     st.stop()
 field_c, type_c, char_c = col_map['field name'], col_map['content type'], col_map['char count']
 
+# --- Display Template ---
+st.header("Template Structure & Definitions")
+st.dataframe(template_df, use_container_width=True)
+
 # --- CTN Input & Column Setup ---
 st.header("CTN Setup")
+if "ctn_input" not in st.session_state:
+    st.session_state["ctn_input"] = ""
 ctn_input = st.text_area(
     "Enter CTN numbers (one per line)",
     help="Provide one or more CTN numbers. Each will be used as a separate column",
     key="ctn_input",
 )
-ctn_list = [c.strip() for c in ctn_input.splitlines() if c.strip()]
+ctn_list = [c.strip() for c in st.session_state["ctn_input"].splitlines() if c.strip()]
 if not ctn_list:
     ctn_list = ["CTN"]
 
 for ctn in ctn_list:
     if ctn not in template_df.columns:
         template_df[ctn] = ""
-
-
-# --- Display Template ---
-st.header("Template Structure & Definitions")
-st.dataframe(template_df, use_container_width=True)
 
 # --- Fill Fixed Fields ---
 st.header("Fill Functional Descriptions & ACL Content")
@@ -189,11 +197,14 @@ for ctn in ctn_list:
 
 # --- AI Generation ---
 st.header("AI-Generated Copy")
+num_variations = st.number_input(
+    "Number of variations", min_value=1, max_value=10, value=3, step=1, key="num_var"
+)
 if st.button("Generate AI Content", key="gen_ai"):
     selected_model = (
         FINETUNED_MODEL if use_finetuned_model == "Fine-tuned Model" else "gpt-4o"
     )
-    variations = 3
+    variations = int(num_variations)
     progress = st.progress(0)
     warnings = []
     total = len(ctn_list) * variations
@@ -203,7 +214,9 @@ if st.button("Generate AI Content", key="gen_ai"):
             step += 1
             system_prompt = (
                 f"You are a Philips copywriter. Brand guidelines: {branding_text[:500]}. "
-                f"Product details: {product_text[:500]}. CTN: {ctn}. "
+                f"Product details: {product_text[:500]}. "
+                f"Marketing claims: {claims_text[:500]}. "
+                f"CTN: {ctn}. "
                 f"Functional Description 1: {user_inputs[ctn].get('Functional Description 1','')}. "
                 f"Functional Description 2: {user_inputs[ctn].get('Functional Description 2','')}. "
                 "Generate copy for each field in the following template. Only reference the provided product information; "
