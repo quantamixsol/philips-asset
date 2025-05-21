@@ -35,6 +35,30 @@ st.image("Phillips-Logo.png", width=120)
 st.title("Philips Asset Template Generator")
 st.caption("© Koninklijke Philips N.V. All rights reserved.")
 
+# Fields that will be replaced by the AI output
+AI_FIELDS = {
+    "Functional Description 1",
+    "Functional Description 2",
+    "Wow",
+    "Subwow",
+    "Marketing Text",
+    "Feature 1 Name",
+    "Feature 1 Description",
+    "Feature 1 Glossary",
+    "Feature 2 Name",
+    "Feature 2 Description",
+}
+
+def parse_char_limit(val):
+    """Extract integer character limit from the Char Count column."""
+    if isinstance(val, (int, float)):
+        return int(val)
+    if isinstance(val, str):
+        m = re.search(r"(\d+)", val)
+        if m:
+            return int(m.group(1))
+    return None
+
 
 # --- Helper: Extract text from PDF ---
 def extract_text_from_pdf(uploaded_file):
@@ -200,13 +224,32 @@ if st.button("Generate AI Content", key="gen_ai"):
             # Fallback to regex parsing if not valid JSON
             matches = re.findall(r"\*\*(.+?):\*\*\s*(.+?)(?=\n\*\*|\Z)", ai_output, re.DOTALL)
             parsed_content = {k.strip(): v.strip() for k, v in matches}
-        # --- Fill into Template ---
+
+        # --- Fill into Template with character limit checks ---
+        warnings = []
         for i, row in filled.iterrows():
             field = row[field_c].strip()
-            is_key = parsed_content.get(field,"")
-            if is_key:
-                filled.at[i, col_name] = parsed_content[field]
-        st.header("Filled Template Structure ")
+            new_val = parsed_content.get(field, "")
+            if new_val:
+                limit = parse_char_limit(row.get(char_c))
+                if limit and len(new_val) > limit:
+                    warnings.append(f"{field} exceeds {limit} characters; truncated.")
+                    new_val = new_val[:limit]
+                filled.at[i, col_name] = new_val
+
+        if warnings:
+            for w in warnings:
+                st.warning(w)
+
+        st.subheader("Review & Edit AI Content")
+        for i, row in filled.iterrows():
+            field = row[field_c].strip()
+            if field in AI_FIELDS:
+                current = filled.at[i, col_name]
+                updated = st.text_area(field, value=current, key=f"edit_{i}")
+                filled.at[i, col_name] = updated
+
+        st.header("Filled Template Structure")
         st.dataframe(filled, use_container_width=True)
 
     except Exception as e:
