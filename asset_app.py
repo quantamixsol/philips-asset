@@ -5,10 +5,14 @@ from PyPDF2 import PdfReader
 from openai import OpenAI
 from dotenv import load_dotenv
 import re, json
+import os
 load_dotenv()
 
 OPENAI_CLIENT = OpenAI()
-FINETUNED_MODEL = "ft:gpt-4o-mini-2024-07-18:quantamix-solutions:philipsfinetunedoptimised:AqQma6hA:ckpt-step-516"
+FINETUNED_MODEL = os.getenv(
+    "OPENAI_FINETUNED_MODEL",
+    "ft:gpt-4o-mini-2024-07-18:quantamix-solutions:philipsfinetunedoptimised:AqQmabHZ",
+)
 # --- Page Configuration & Branding CSS ---
 st.set_page_config(page_title="Philips Asset Template Generator", layout="wide")
 st.markdown(
@@ -145,7 +149,8 @@ if st.button("Generate AI Content", key="gen_ai"):
     system_prompt = (
         f"You are a Philips copywriter. Brand guidelines: {branding_text[:500]}. "
         f"Product details: {product_text[:500]}. CTN: {ctn}. "
-        "Generate copy for each field in the following template. "
+        "Generate copy for each field in the following template. Only reference the provided product information; "
+        "do not mention unrelated Philips products or categories. "
         "Output MUST be a single valid JSON object whose keys exactly match the template’s “Field Name” values "
         "and whose values are the generated strings. "
         "Do not include any markdown or explanatory text—only the JSON. "
@@ -175,8 +180,9 @@ if st.button("Generate AI Content", key="gen_ai"):
             model=selected_model,
             messages=[
                 {"role":"system","content":system_prompt},
-                {"role":"user","content":user_prompt}
-                ]
+                {"role":"user","content":user_prompt},
+            ],
+            temperature=0.2,
         )
         # we want to field this into table 
         ai_output = resp.choices[0].message.content
