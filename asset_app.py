@@ -142,18 +142,34 @@ if st.button("Generate AI Content", key="gen_ai"):
     )
     user_prompt = "Fields with limits:\n"
     for i, row in filled.iterrows():
-        if row[type_c] in ["Headline","Marketing Text","Feature Description","Feature Glossary"]:
-            user_prompt += f"- {row[field_c]} (<{row[char_c]}) chars\n"
+        if row[type_c] in ["Headline","Marketing Text", "Feature Name" ,"Feature Description","Feature Glossary", "Pack Contents", "Disclaimer"]:
+            char_count = row.get(char_c,300)
+            user_prompt += f"- {row[field_c]} (<{char_count}) chars\n"
     try:
         resp = OPENAI_CLIENT.chat.completions.create(
-            model=model_choice,
+            model="gpt-4o",
             messages=[{"role":"system","content":system_prompt},{"role":"user","content":user_prompt}]
         )
-        st.text_area("AI Output", resp.choices[0].message.content, height=300, key="ai_out")
+        # we want to field this into table 
+        ai_output = resp.choices[0].message.content
+        st.text_area("AI Output", ai_output, height=300, key="ai_out")
+        
+        import re
+        matches = re.findall(r"\*\*(.+?):\*\*\s*(.+?)(?=\n\*\*|\Z)", ai_output, re.DOTALL)
+        parsed_content = {k.strip(): v.strip() for k, v in matches}
+        # --- Fill into Template ---
+        for i, row in filled.iterrows():
+            field = row[field_c].strip()
+            is_key = parsed_content.get(field,"")
+            if is_key:
+                filled.at[i, col_name] = parsed_content[field]
+
     except Exception as e:
         st.error(f"AI generation failed: {e}")
 
 # --- Export ---
+st.header("Filled Template Structure ")
+st.dataframe(filled, use_container_width=True)
 st.header("Export Completed Template")
 csv = filled.to_csv(index=False).encode()
 st.download_button("Download CSV", csv, file_name=f"{col_name}_asset_template.csv", key="dl_csv")
