@@ -13,6 +13,7 @@ FINETUNED_MODEL = os.getenv(
     "OPENAI_FINETUNED_MODEL",
     "ft:gpt-4o-mini-2024-07-18:quantamix-solutions:philipsfinetunedoptimised:AqQmabHZ",
 )
+PDF_CONTEXT_CHARS = 1500
 # --- Page Configuration & Branding CSS ---
 st.set_page_config(page_title="Philips Asset Template Generator", layout="wide")
 st.markdown(
@@ -177,10 +178,16 @@ user_inputs = {}
 for ctn in ctn_list:
     st.subheader(f"Inputs for CTN {ctn}")
     user_inputs[ctn] = {}
+    ctn_context = st.text_area(
+        f"{ctn} - Additional Context",
+        key=f"{ctn}_context",
+        height=80,
+    )
+    user_inputs[ctn]["context"] = ctn_context
     for i, row in filled.iterrows():
         content_type = row[type_c]
         field = row[field_c]
-        if content_type == "Functional Description" and field in AI_FIELDS:
+        if content_type == "Functional Description":
             inp = st.text_area(f"{ctn} - {field}", key=f"{ctn}_{field}", height=80)
             user_inputs[ctn][field] = inp
             filled.at[i, ctn] = inp
@@ -213,12 +220,13 @@ if st.button("Generate AI Content", key="gen_ai"):
         for var in range(1, variations + 1):
             step += 1
             system_prompt = (
-                f"You are a Philips copywriter. Brand guidelines: {branding_text[:500]}. "
-                f"Product details: {product_text[:500]}. "
-                f"Marketing claims: {claims_text[:500]}. "
+                f"You are a Philips copywriter. Brand guidelines: {branding_text[:PDF_CONTEXT_CHARS]}. "
+                f"Product details: {product_text[:PDF_CONTEXT_CHARS]}. "
+                f"Marketing claims: {claims_text[:PDF_CONTEXT_CHARS]}. "
                 f"CTN: {ctn}. "
                 f"Functional Description 1: {user_inputs[ctn].get('Functional Description 1','')}. "
                 f"Functional Description 2: {user_inputs[ctn].get('Functional Description 2','')}. "
+                f"Additional context: {user_inputs[ctn].get('context','')}. "
                 "Generate copy for each field in the following template. Only reference the provided product information; "
                 "do not mention unrelated Philips products or categories. "
                 "Output MUST be a single valid JSON object whose keys exactly match the template’s “Field Name” values "
@@ -290,7 +298,7 @@ if st.button("Generate AI Content", key="gen_ai"):
                 st.markdown(f"**{col_name}**")
                 for i, row in filled.iterrows():
                     field = row[field_c].strip()
-                    if field in AI_FIELDS:
+                    if field in AI_FIELDS or row[type_c] == "Functional Description":
                         current = filled.at[i, col_name]
                         updated = st.text_area(
                             f"{col_name} - {field}", value=current, key=f"edit_{col_name}_{i}"
