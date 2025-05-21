@@ -48,7 +48,17 @@ AI_FIELDS = {
     "Feature 1 Glossary",
     "Feature 2 Name",
     "Feature 2 Description",
+    "Feature 2 Glossary",
+    "Feature 3 Name",
+    "Feature 3 Description",
+    "Feature 3 Glossary",
+    "Pack Contents",
+    "Disclaimer",
 }
+
+def build_json_template(df, field_col):
+    """Return a JSON skeleton with all field names as keys."""
+    return {row[field_col].strip(): "" for _, row in df.iterrows()}
 
 def parse_char_limit(val):
     """Extract integer character limit from the Char Count column."""
@@ -219,22 +229,23 @@ if st.button("Generate AI Content", key="gen_ai"):
     for ctn in ctn_list:
         for var in range(1, variations + 1):
             step += 1
+            json_template = json.dumps(build_json_template(filled, field_c))
+
             system_prompt = (
                 f"You are a Philips copywriter. Brand guidelines: {branding_text[:PDF_CONTEXT_CHARS]}. "
                 f"Product details: {product_text[:PDF_CONTEXT_CHARS]}. "
                 f"Marketing claims: {claims_text[:PDF_CONTEXT_CHARS]}. "
-                f"CTN: {ctn}. "
+                f"CTN: {ctn}. Variation {var}. "
                 f"Functional Description 1: {user_inputs[ctn].get('Functional Description 1','')}. "
                 f"Functional Description 2: {user_inputs[ctn].get('Functional Description 2','')}. "
                 f"Additional context: {user_inputs[ctn].get('context','')}. "
-                "Generate copy for each field in the following template. Only reference the provided product information; "
-                "do not mention unrelated Philips products or categories. "
-                "Output MUST be a single valid JSON object whose keys exactly match the template’s “Field Name” values "
-                "and whose values are the generated strings. "
+                "Generate copy for every field in the JSON template below. Only reference the provided product information; "
+                "do not mention unrelated Philips products or categories. Each variation should be unique. "
+                "Return a single valid JSON object whose keys exactly match the template’s field names and whose values are the generated strings. "
                 "Do not include any markdown or explanatory text—only the JSON."
             )
 
-            user_prompt = "Fields with limits:\n"
+            user_prompt = "JSON template:\n" + json_template + "\nCharacter limits:\n"
             for _, row in filled.iterrows():
                 if row[type_c] in [
                     "Headline",
@@ -245,12 +256,13 @@ if st.button("Generate AI Content", key="gen_ai"):
                     "Pack Contents",
                     "Disclaimer",
                 ]:
-                    char_count = row.get(char_c, 300)
-                    if isinstance(char_count, str) and char_count.strip().startswith("<"):
-                        limit = char_count
+                    char_count = row.get(char_c)
+                    limit = parse_char_limit(char_count)
+                    if limit:
+                        limit_str = f"<{limit}>"
                     else:
-                        limit = f"<{char_count}>"
-                    user_prompt += f"- {row[field_c]} ({limit}) chars\n"
+                        limit_str = "no limit"
+                    user_prompt += f"- {row[field_c]} ({limit_str}) chars\n"
 
             try:
                 resp = OPENAI_CLIENT.chat.completions.create(
